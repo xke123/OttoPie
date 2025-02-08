@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QSpinBox, QTextEdit, QFileDialog,
     QDialog, QDialogButtonBox, QTabWidget, QMessageBox, QGroupBox
 )
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QObject
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 
 # ===============================
 # 对话框：任务脚本配置编辑
@@ -106,7 +106,7 @@ class ScriptConfigDialog(QDialog):
 # 任务项：封装每个脚本任务
 # ===============================
 class TaskWidget(QWidget):
-    log_signal = pyqtSignal(str)  # 用于向主窗体发送日志信息
+    log_signal = pyqtSignal(str)   # 用于向主窗体发送日志信息
     removed_signal = pyqtSignal(object)  # 用于通知删除任务
 
     def __init__(self, config, parent=None):
@@ -116,8 +116,9 @@ class TaskWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.run_task)
         self.running = False
-        self.load_script_module()
+        self.is_executing = False  # 防止并发执行
 
+        self.load_script_module()
         self.init_ui()
 
     def init_ui(self):
@@ -137,6 +138,12 @@ class TaskWidget(QWidget):
         self.edit_btn.clicked.connect(self.edit_config)
         layout.addWidget(self.edit_btn)
 
+        # ==== 更新脚本按钮（直接重新加载脚本） ====
+        self.update_btn = QPushButton("更新脚本")
+        self.update_btn.clicked.connect(self.update_script)
+        layout.addWidget(self.update_btn)
+        # ============================================
+
         # 删除按钮
         self.del_btn = QPushButton("删除")
         self.del_btn.clicked.connect(self.delete_self)
@@ -149,7 +156,9 @@ class TaskWidget(QWidget):
         path = self.config.get("script_path", "")
         if not path:
             self.log("脚本路径为空")
+            self.script_module = None
             return
+
         module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
         spec = importlib.util.spec_from_file_location(module_name, path)
         module = importlib.util.module_from_spec(spec)
@@ -197,24 +206,47 @@ class TaskWidget(QWidget):
             self.config = new_config
             # 重新加载脚本模块
             self.load_script_module()
-            # 如果需要自动重启任务，则在此处调用 self.start()
             self.log("配置已修改")
         else:
             self.log("取消配置修改")
 
+    # ==== 更新脚本功能：直接重新加载当前脚本 ====
+    def update_script(self):
+        """
+        直接重新加载当前配置中的脚本文件。
+        如果任务正在运行，则先停止任务，然后重新加载脚本模块，
+        最后提示用户重新启动任务以使用更新后的脚本。
+        """
+        if self.running:
+            self.stop()
+
+        # 为确保加载的是最新版本，可以从 sys.modules 中删除旧模块（如果存在）
+        path = self.config.get("script_path", "")
+        module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
+        # 重新加载脚本模块
+        self.load_script_module()
+
+        # 更新显示的脚本名称
+        self.label.setText(os.path.basename(path))
+
+        self.log(f"脚本已重新加载: {os.path.basename(path)}。请重新启动任务以应用更新。")
+    # ============================================
+
     def delete_self(self):
         self.stop()
         self.log("任务删除")
-        # 发出信号通知主界面删除该任务项
         self.removed_signal.emit(self)
 
     def run_task(self):
-    # 如果任务正在执行，则跳过本次调用
-        if getattr(self, "is_executing", False):
+        # 如果任务正在执行，则跳过本次调用
+        if self.is_executing:
             self.log("上次任务尚未完成，本次执行已跳过")
             return
 
-        self.is_executing = True  # 标记任务开始执行
+        self.is_executing = True
         try:
             if not self.script_module:
                 self.log("脚本模块未加载，任务无法执行")
@@ -228,9 +260,7 @@ class TaskWidget(QWidget):
         except Exception as e:
             self.log("任务执行异常: " + str(e))
         finally:
-            # 任务执行完毕，重置标志
             self.is_executing = False
-
 
     def log(self, message):
         msg = "[{}] {}".format(os.path.basename(self.config.get("script_path", "")), message)
@@ -296,7 +326,6 @@ class MainWindow(QMainWindow):
             group_layout = QVBoxLayout()
             group_layout.addWidget(task_widget)
             group.setLayout(group_layout)
-            # 将 group 存储为任务项的一个属性，方便后续删除
             task_widget.group_box = group
             self.task_list_layout.addWidget(group)
             self.append_log("添加任务：" + config.get("script_path"))
