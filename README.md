@@ -20,24 +20,24 @@
 
 ## 🚀 安装与运行
 
-### 1️⃣ 安装依赖
+### 安装依赖
 
-OttoPie 基于 Python 3 运行，请确保已安装 Python 3.x，并执行以下命令安装依赖：
+OttoPie 基于 Python 3 运行，请确保已安装 Python 3.x。
 
-```sh
-pip install pyqt5
-```
+### 运行 OttoPie
 
-> 如果使用 PySide2，请替换为 `pip install pyside2`。
+该项目已包含虚拟环境文件 venv.zip，需要解压后使用。为了方便使用，已经添加了各平台一键启动脚本，存放于 run_scripts/ 目录中。
+根据所在平台，使用相应脚本启动主程序：
+Windows：双击 run_scripts/windows_main.bat
+macOS：双击 run_scripts/macos_main.command
+Linux：在终结中运行 ./run_scripts/linux_main.sh
 
-### 2️⃣ 运行 OttoPie
+如需要运行插件打包程序：
+Windows：双击 run_scripts/windows_packager.bat
+macOS：双击 run_scripts/macos_packager.command
+Linux：在终结中运行 ./run_scripts/linux_packager.sh
 
-在终端或命令行中执行：
-
-```sh
-python main.py
-```
-
+运行脚本会自动检查并解压 venv.zip，使用虚拟环境运行 OttoPie。
 ---
 
 ## 🏗️ 使用指南
