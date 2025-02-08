@@ -1,6 +1,6 @@
 ### OttoPie - 自动化 Python 任务管理平台 🐙🥧
 
-![OttoPie Logo](logo.webp)
+![OttoPie Logo](image.webp)
 
 
 **OttoPie** 是一款跨平台的 Python 自动化任务管理工具。它的名字来源于 "Otto"（八爪鱼 🐙，谐音Auto ，代表多任务与自动化）和 "Pie"（谐音派，Python 🥧，代表 Python 生态）。OttoPie 让你像八爪鱼一样灵活管理多个 Python 自动化任务，并提供图形化界面、定时调度、脚本管理和日志记录等功能。
