@@ -2,6 +2,8 @@ import sys
 import os
 import importlib.util
 import json
+import tempfile
+import zipfile
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QSpinBox, QTextEdit, QFileDialog,
@@ -12,9 +14,52 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 # 配置记录文件名称
 CONFIG_RECORD_FILE = "tasks_config.json"
 
-# ===============================
-# 对话框：任务脚本配置编辑（修改版）
-# ===============================
+# ==================================================
+# 插件包加载函数：解压 .ottopie 包并加载入口模块
+# ==================================================
+def load_plugin_from_package(plugin_package_path):
+    """
+    解压插件包并加载入口模块
+    :param plugin_package_path: 插件包路径（扩展名 .ottopie，实际是一个 zip 文件）
+    :return: (plugin_module, temp_dir)
+             plugin_module 为加载后的模块对象，temp_dir 为解压后的临时目录（后续可用于清理）
+    """
+    # 创建临时目录用于解压插件包
+    temp_dir = tempfile.mkdtemp(prefix="plugin_")
+    with zipfile.ZipFile(plugin_package_path, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+    
+    # 读取插件清单 plugin.json
+    manifest_path = os.path.join(temp_dir, "plugin.json")
+    if not os.path.exists(manifest_path):
+        raise RuntimeError("插件包缺少 plugin.json 清单文件")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    
+    # 获取入口模块文件名（例如 "plugin.py"）
+    entry_point = manifest.get("entry_point")
+    if not entry_point:
+        raise RuntimeError("plugin.json 中未指定入口模块")
+    entry_module_path = os.path.join(temp_dir, entry_point)
+    if not os.path.exists(entry_module_path):
+        raise RuntimeError("入口模块文件不存在：" + entry_point)
+    
+    # 将 vendor 目录加入 sys.path 以便加载依赖（如果存在）
+    vendor_path = os.path.join(temp_dir, "vendor")
+    if os.path.isdir(vendor_path):
+        sys.path.insert(0, vendor_path)
+    
+    # 动态加载入口模块
+    module_name = "plugin_" + os.path.basename(plugin_package_path).replace(".", "_")
+    spec = importlib.util.spec_from_file_location(module_name, entry_module_path)
+    plugin_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(plugin_module)
+    
+    return plugin_module, temp_dir
+
+# ==================================================
+# 对话框：任务脚本配置编辑（支持 .py 和 .ottopie）
+# ==================================================
 class ScriptConfigDialog(QDialog):
     def __init__(self, config=None, parent=None):
         super().__init__(parent)
@@ -24,11 +69,12 @@ class ScriptConfigDialog(QDialog):
 
         layout = QVBoxLayout()
 
-        # 脚本文件选择
+        # 脚本文件选择（支持 .py 和 .ottopie 文件）
         script_layout = QHBoxLayout()
         self.script_label = QLabel("脚本文件:")
         self.script_line = QLineEdit()
         self.script_btn = QPushButton("选择文件")
+        # 更新文件过滤器：同时支持 Python 文件和插件包
         self.script_btn.clicked.connect(self.choose_script)
         script_layout.addWidget(self.script_label)
         script_layout.addWidget(self.script_line)
@@ -89,7 +135,6 @@ class ScriptConfigDialog(QDialog):
         self.load_config()
 
     def load_config(self):
-        # 填充已有配置，注意执行间隔使用多单位
         self.script_line.setText(self.config.get("script_path", ""))
         self.src_line.setText(self.config.get("src", ""))
         self.tgt_line.setText(self.config.get("tgt", ""))
@@ -99,7 +144,12 @@ class ScriptConfigDialog(QDialog):
         self.seconds_spin.setValue(self.config.get("interval_seconds", 10))
 
     def choose_script(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "选择任务脚本", "", "Python Files (*.py)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择任务脚本",
+            "",
+            "Python Files (*.py);;Plugin Package (*.ottopie)"
+        )
         if filename:
             self.script_line.setText(filename)
 
@@ -114,20 +164,18 @@ class ScriptConfigDialog(QDialog):
             self.tgt_line.setText(folder)
 
     def check_and_accept(self):
-        # 检查源和目标文件夹是否同时存在且互不包含
+        # 检查源与目标文件夹是否存在包含关系
         src = self.src_line.text().strip()
         tgt = self.tgt_line.text().strip()
         if src and tgt:
             src_abs = os.path.abspath(src)
             tgt_abs = os.path.abspath(tgt)
-            # 如果相等或其中一者是另一者的子目录，视为包含关系
             if src_abs == tgt_abs or src_abs.startswith(tgt_abs + os.sep) or tgt_abs.startswith(src_abs + os.sep):
                 QMessageBox.warning(self, "配置错误", "源文件夹与目标文件夹存在包含关系，请选择互不包含的文件夹。")
                 return
         self.accept()
 
     def get_config(self):
-        # 返回配置字典，包含多单位的间隔设置
         return {
             "script_path": self.script_line.text().strip(),
             "src": self.src_line.text().strip(),
@@ -138,9 +186,9 @@ class ScriptConfigDialog(QDialog):
             "interval_seconds": self.seconds_spin.value()
         }
 
-# ===============================
-# 任务项：封装每个脚本任务（增加配置修改信号）
-# ===============================
+# ==================================================
+# 任务项：封装每个脚本任务（支持插件包与传统脚本）
+# ==================================================
 class TaskWidget(QWidget):
     log_signal = pyqtSignal(str)            # 用于向主窗体发送日志信息
     removed_signal = pyqtSignal(object)       # 用于通知删除任务
@@ -150,6 +198,7 @@ class TaskWidget(QWidget):
         super().__init__(parent)
         self.config = config
         self.script_module = None
+        self.plugin_temp_dir = None  # 如果加载的是插件包，保存解压后的临时目录（后续可清理）
         self.timer = QTimer()
         self.timer.timeout.connect(self.run_task)
         self.running = False
@@ -160,55 +209,60 @@ class TaskWidget(QWidget):
 
     def init_ui(self):
         layout = QHBoxLayout()
-
-        # 显示脚本文件名称
         self.label = QLabel(os.path.basename(self.config.get("script_path", "")))
         layout.addWidget(self.label)
-
-        # 启动/停止按钮
         self.start_stop_btn = QPushButton("启动")
         self.start_stop_btn.clicked.connect(self.toggle_running)
         layout.addWidget(self.start_stop_btn)
-
-        # 编辑配置按钮
         self.edit_btn = QPushButton("编辑配置")
         self.edit_btn.clicked.connect(self.edit_config)
         layout.addWidget(self.edit_btn)
-
-        # 更新脚本按钮
         self.update_btn = QPushButton("更新脚本")
         self.update_btn.clicked.connect(self.update_script)
         layout.addWidget(self.update_btn)
-
-        # 删除按钮
         self.del_btn = QPushButton("删除")
         self.del_btn.clicked.connect(self.delete_self)
         layout.addWidget(self.del_btn)
-
         self.setLayout(layout)
 
     def load_script_module(self):
-        """动态加载脚本模块，并检查是否有 run() 接口"""
+        """
+        根据配置加载插件模块：
+         - 如果选择的是 .ottopie 文件，则调用 load_plugin_from_package()
+         - 否则按传统 .py 脚本加载
+        """
         path = self.config.get("script_path", "")
         if not path:
             self.log("脚本路径为空")
             self.script_module = None
             return
 
-        module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
-        spec = importlib.util.spec_from_file_location(module_name, path)
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)
-            if hasattr(module, "run"):
-                self.script_module = module
-                self.log("加载脚本成功: " + path)
-            else:
-                self.log("加载失败，脚本中未定义 run(params)")
+        if path.lower().endswith(".ottopie"):
+            # 加载插件包
+            try:
+                plugin_module, temp_dir = load_plugin_from_package(path)
+                self.script_module = plugin_module
+                self.plugin_temp_dir = temp_dir
+                self.log("成功加载插件包: " + path)
+            except Exception as e:
+                self.log("加载插件包异常: " + str(e))
                 self.script_module = None
-        except Exception as e:
-            self.log("加载脚本异常: " + str(e))
-            self.script_module = None
+        else:
+            # 传统 Python 脚本加载
+            module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(module)
+                if hasattr(module, "run"):
+                    self.script_module = module
+                    self.log("加载脚本成功: " + path)
+                else:
+                    self.log("加载失败，脚本中未定义 run(params)")
+                    self.script_module = None
+            except Exception as e:
+                self.log("加载脚本异常: " + str(e))
+                self.script_module = None
 
     def toggle_running(self):
         if self.running:
@@ -220,7 +274,6 @@ class TaskWidget(QWidget):
         if not self.script_module:
             self.log("脚本模块未加载，无法启动")
             return
-        # 根据天、小时、分钟、秒计算总间隔（毫秒）
         days = self.config.get("interval_days", 0)
         hours = self.config.get("interval_hours", 0)
         minutes = self.config.get("interval_minutes", 0)
@@ -238,14 +291,12 @@ class TaskWidget(QWidget):
         self.log("任务停止")
 
     def edit_config(self):
-        # 修改配置前先停止任务
         if self.running:
             self.stop()
         dialog = ScriptConfigDialog(self.config, self)
         if dialog.exec_() == QDialog.Accepted:
             new_config = dialog.get_config()
             self.config = new_config
-            # 重新加载脚本模块
             self.load_script_module()
             self.log("配置已修改")
             self.config_changed_signal.emit()
@@ -253,12 +304,10 @@ class TaskWidget(QWidget):
             self.log("取消配置修改")
 
     def update_script(self):
-        """
-        更新脚本：停止任务、清除旧模块后重新加载，并提示用户重新启动任务。
-        """
         if self.running:
             self.stop()
 
+        # 清理旧模块缓存（如果有）
         path = self.config.get("script_path", "")
         module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
         if module_name in sys.modules:
@@ -272,6 +321,13 @@ class TaskWidget(QWidget):
         self.stop()
         self.log("任务删除")
         self.removed_signal.emit(self)
+        # 可在此处清理插件包的临时目录（如果需要）
+        if self.plugin_temp_dir and os.path.isdir(self.plugin_temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(self.plugin_temp_dir)
+            except Exception as e:
+                self.log("清理临时目录异常: " + str(e))
 
     def run_task(self):
         if self.is_executing:
@@ -298,9 +354,9 @@ class TaskWidget(QWidget):
         msg = "[{}] {}".format(os.path.basename(self.config.get("script_path", "")), message)
         self.log_signal.emit(msg)
 
-# ===============================
-# 主窗口：包含脚本管理和任务日志两个 Tab，同时实现配置记录的加载和保存
-# ===============================
+# ==================================================
+# 主窗口：脚本管理和任务日志（支持配置记录的加载和保存）
+# ==================================================
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -321,8 +377,6 @@ class MainWindow(QMainWindow):
         self.add_task_btn = QPushButton("添加任务")
         self.add_task_btn.clicked.connect(self.add_task)
         self.manage_layout.addWidget(self.add_task_btn)
-
-        # 用于存放任务项的区域
         self.task_list_widget = QWidget()
         self.task_list_layout = QVBoxLayout()
         self.task_list_layout.setAlignment(Qt.AlignTop)
@@ -398,9 +452,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.append_log("保存任务配置失败: " + str(e))
 
-# ===============================
+# ==================================================
 # 主程序入口
-# ===============================
+# ==================================================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
