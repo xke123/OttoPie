@@ -39,7 +39,6 @@ def sync_folders(src, tgt, counters):
         tgt_entry = os.path.join(tgt, entry)
         src_entry = os.path.join(src, entry)
         if not os.path.exists(src_entry):
-            # 如果目标中的该条目在源中不存在，则删除
             if os.path.isdir(tgt_entry):
                 shutil.rmtree(tgt_entry)
             else:
@@ -49,11 +48,11 @@ def sync_folders(src, tgt, counters):
 def run(params):
     """
     同步任务接口，必须实现 run(params) 接口。
-    
+
     参数 params 为字典，必须包含：
       - "src": 源文件夹路径
       - "tgt": 目标文件夹路径
-      
+
     返回字符串，描述操作结果。
     """
     src = params.get("src", "").strip()

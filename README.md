@@ -1,9 +1,8 @@
-### OttoPie - 自动化 Python 任务管理平台 🐙🥧
+# OttoPie - 自动化 Python 任务管理平台 🐙🥧
 
 ![OttoPie Logo](image.webp)
 
-
-**OttoPie** 是一款跨平台的 Python 自动化任务管理工具。它的名字来源于 "Otto"（八爪鱼 🐙，谐音Auto ，代表多任务与自动化）和 "Pie"（谐音派，Python 🥧，代表 Python 生态）。OttoPie 让你像八爪鱼一样灵活管理多个 Python 自动化任务，并提供图形化界面、定时调度、脚本管理和日志记录等功能。
+**OttoPie** 是一款跨平台的 Python 自动化任务管理工具。它的名字来源于 "Otto"（八爪鱼 🐙，谐音 Auto，代表多任务与自动化）和 "Pie"（谐音派，代表 Python 生态）。OttoPie 让你像八爪鱼一样灵活管理多个 Python 自动化任务，并提供图形化界面、定时调度、脚本管理、日志记录以及插件化扩展功能。
 
 ---
 
@@ -14,7 +13,8 @@
 - **📂 文件监控**：可结合插件脚本，实现对文件夹变化的实时监控。
 - **🖥️ 图形界面**：基于 PyQt 构建，无需命令行即可操作。
 - **💾 任务日志**：集中记录脚本运行日志，方便查看执行状态。
-- **🎛️ 插件式架构**：支持自定义 Python 插件，只需实现简单的接口，即可轻松扩展功能。
+- **🔌 插件式架构**：支持自定义插件扩展功能，只需实现简单接口，即可轻松扩展。
+- **📦 插件打包**：插件开发者可将插件打包成自包含包，扩展名为 **.ottopie**，插件包内包含插件代码、元数据和所有依赖，保证离线环境下也能正常使用。
 
 ---
 
@@ -46,10 +46,10 @@ python main.py
 
 1. 打开 OttoPie，进入“脚本管理”页面。
 2. 点击 **“添加任务”** 按钮，弹出脚本配置窗口：
-   - 选择 Python 任务脚本（`.py` 文件）。
+   - **选择脚本文件**：你可以选择传统的 Python 脚本（`.py` 文件）或打包为 **.ottopie** 格式的插件包。
    - 选择 **源文件夹** 和 **目标文件夹**（如果任务需要）。
-   - 设置 **执行间隔**（以秒为单位）。
-3. 点击 **确定**，任务会添加到任务列表中。
+   - 设置 **执行间隔**，支持天、小时、分钟和秒的灵活设置。
+3. 点击 **确定** 后，任务会添加到任务列表中。
 
 ### 2️⃣ 启动 / 停止任务
 
@@ -58,12 +58,12 @@ python main.py
 
 ### 3️⃣ 编辑任务配置
 
-- 点击 **“编辑配置”** 按钮，可重新配置脚本参数。
-- **编辑时任务会自动停止**，修改完成后可重新启动任务。
+- 点击 **“编辑配置”** 按钮，可重新配置任务参数（如脚本文件、执行间隔、源/目标文件夹等）。
+- 编辑时任务会自动停止，修改完成后可重新启动任务。
 
 ### 4️⃣ 删除任务
 
-- 点击 **“删除”** 按钮，可移除任务（不会删除脚本文件）。
+- 点击 **“删除”** 按钮，可将任务从列表中移除（不会删除实际脚本文件）。
 
 ### 5️⃣ 查看日志
 
@@ -71,22 +71,28 @@ python main.py
 
 ---
 
-## 🔌 开发自定义插件（Python 任务脚本）
+## 🔌 插件开发与打包
 
-OttoPie 采用 **插件化架构**，每个 Python 任务脚本需要实现 `run(params)` 接口，OttoPie 会定期调用 `run()` 运行任务。
+OttoPie 采用插件化架构，允许你扩展更多功能。插件必须以 **.py** 脚本或打包为 **.ottopie** 文件的形式加载。
 
-### 📜 插件示例：simpletask.py
+### 1. 插件接口规范
 
-在本项目中，我们提供了一个示例脚本 **simpletask.py**，用于展示如何实现插件接口。该示例脚本实现了以下功能：
+每个插件（无论是单个 .py 脚本还是打包后的 .ottopie 插件包）都必须实现如下接口：
 
-- **文件监控与拷贝**：  
-  脚本会监视指定的源文件夹，将符合条件的图片文件复制到目标文件夹中。  
-- **目录结构保留**：  
-  在拷贝过程中，保留源文件夹中的子目录结构，使目标文件夹成为源文件夹的镜像。  
-- **同步操作**：  
-  当源文件夹中的文件发生更新或删除时，目标文件夹也会随之更新或删除，实现两者的完全同步。
+#### 必须实现 `run(params)` 函数
 
-示例代码如下：
+- **参数**：  
+  - `params` 是一个字典，包含任务运行时传入的配置信息。  
+    例如，对于文件同步任务，`params` 可能包含：
+    - `"src"`：源文件夹路径
+    - `"tgt"`：目标文件夹路径
+
+- **返回值**：  
+  - `run(params)` 函数必须返回一个字符串，用于记录任务执行结果（如成功信息或错误描述）。
+
+#### 示例说明
+
+以下示例展示了一个插件如何实现 `run(params)` 接口。插件功能为递归同步源文件夹与目标文件夹，并统计拷贝、更新、删除和跳过的文件数：
 
 ```python
 import os
@@ -95,42 +101,35 @@ import shutil
 def sync_folders(src, tgt, counters):
     """
     递归同步 src 与 tgt 文件夹，使 tgt 成为 src 的完整镜像。
-    
+
     参数：
       - src: 源文件夹路径
       - tgt: 目标文件夹路径
-      - counters: 用于统计操作次数的字典，包含 'copied', 'updated', 'deleted', 'skipped'
+      - counters: 统计操作次数的字典，包括 'copied', 'updated', 'deleted', 'skipped'
     """
-    # 确保目标文件夹存在
     if not os.path.exists(tgt):
         os.makedirs(tgt)
     
-    # 1. 遍历源文件夹，处理新增和更新
     for entry in os.listdir(src):
         src_entry = os.path.join(src, entry)
         tgt_entry = os.path.join(tgt, entry)
         if os.path.isdir(src_entry):
-            # 递归同步子文件夹
             sync_folders(src_entry, tgt_entry, counters)
         else:
-            # 如果目标中不存在该文件，则拷贝
             if not os.path.exists(tgt_entry):
                 shutil.copy2(src_entry, tgt_entry)
                 counters["copied"] += 1
             else:
-                # 如果目标中存在，但源文件更新，则覆盖
                 if os.path.getmtime(src_entry) > os.path.getmtime(tgt_entry):
                     shutil.copy2(src_entry, tgt_entry)
                     counters["updated"] += 1
                 else:
                     counters["skipped"] += 1
 
-    # 2. 遍历目标文件夹，删除那些在源文件夹中不存在的文件或目录
     for entry in os.listdir(tgt):
         tgt_entry = os.path.join(tgt, entry)
         src_entry = os.path.join(src, entry)
         if not os.path.exists(src_entry):
-            # 如果目标中的该条目在源中不存在，则删除
             if os.path.isdir(tgt_entry):
                 shutil.rmtree(tgt_entry)
             else:
@@ -140,12 +139,12 @@ def sync_folders(src, tgt, counters):
 def run(params):
     """
     同步任务接口，必须实现 run(params) 接口。
-    
-    参数 params 为字典，必须包含：
-      - "src": 源文件夹路径
-      - "tgt": 目标文件夹路径
-      
-    返回字符串，描述操作结果。
+
+    参数：
+      - params: 字典，必须包含 "src"（源文件夹路径）和 "tgt"（目标文件夹路径）
+
+    返回：
+      - 字符串，描述操作结果
     """
     src = params.get("src", "").strip()
     tgt = params.get("tgt", "").strip()
@@ -165,17 +164,36 @@ def run(params):
         return "同步过程中发生错误: " + str(e)
 ```
 
-#### 📌 插件规范
+### 2. 插件打包工具
 
-- **必须实现 `run(params)` 函数**。  
-- `params` 参数是一个 Python 字典，包含任务配置，如 `src`（源文件夹）和 `tgt`（目标文件夹）。  
-- **返回值必须是字符串**，用于日志记录。  
-- 示例脚本 **simpletask.py** 展示了如何实现文件的新增、更新和删除同步，确保目标文件夹始终与源文件夹保持一致。
+为了方便插件开发者打包插件，OttoPie 提供了一个插件打包工具，该工具可以自动：
+- 自动扫描插件代码生成 `requirements.txt`（对于依赖较多的插件）；
+- 使用 `pip download` 下载依赖到 `vendor` 目录中（保证离线时可用）；
+- 按照标准格式生成插件包，输出扩展名为 **.ottopie**。
 
----
+#### 使用说明
 
-OttoPie 仍在持续开发中，欢迎贡献代码、报告问题或提出新功能建议！  
-如果你有兴趣，可以 Fork 本项目并提交 Pull Request 🚀。
+1. **运行打包工具**  
+   在命令行中执行：
+   ```sh
+   python ottopie_packager.py
+   ```
+   （请确保环境中已安装 Python、pip 和 pipreqs。）
+
+2. **依次输入提示信息**  
+   - 输入插件主脚本文件路径（例如 `plugin.py`）。
+   - 填写插件基本信息（名称、版本、描述、入口模块文件名）。
+   - 工具自动在临时插件目录中运行 pipreqs 生成 `requirements.txt`，然后自动下载依赖到 `vendor` 目录中。
+   - 输入生成的插件包名称（不含扩展名），工具会生成扩展名为 `.ottopie` 的插件包。
+
+3. **生成的插件包**  
+   打包工具生成的插件包将包含：
+   - 插件主脚本（入口模块）
+   - 自动生成的 `requirements.txt`（可选，仅供参考）
+   - `plugin.json`（插件元数据）
+   - `vendor/` 目录（所有依赖包）
+
+该插件包可直接在 OttoPie 中加载使用。
 
 ---
 
@@ -185,8 +203,5 @@ OttoPie 遵循 MIT 许可证，你可以自由使用、修改和分发本软件�
 
 ---
 
-OttoPie，让你的 Python 任务自动化管理变得更简单！🐙🥧
+OttoPie —— 让你的 Python 任务自动化管理变得更简单！🐙🥧
 
----
-
-以上即为 OttoPie 的使用说明与示例脚本介绍，帮助你快速上手并开发更多自定义插件。
