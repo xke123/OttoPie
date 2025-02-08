@@ -1,6 +1,7 @@
 import sys
 import os
 import importlib.util
+import json
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QSpinBox, QTextEdit, QFileDialog,
@@ -8,19 +9,22 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 
+# 配置记录文件名称
+CONFIG_RECORD_FILE = "tasks_config.json"
+
 # ===============================
-# 对话框：任务脚本配置编辑
+# 对话框：任务脚本配置编辑（修改版）
 # ===============================
 class ScriptConfigDialog(QDialog):
     def __init__(self, config=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("配置任务脚本")
-        self.resize(400, 220)
+        self.resize(500, 250)
         self.config = config if config else {}
 
         layout = QVBoxLayout()
 
-        # 脚本文件
+        # 脚本文件选择
         script_layout = QHBoxLayout()
         self.script_label = QLabel("脚本文件:")
         self.script_line = QLineEdit()
@@ -31,7 +35,7 @@ class ScriptConfigDialog(QDialog):
         script_layout.addWidget(self.script_btn)
         layout.addLayout(script_layout)
 
-        # 源文件夹
+        # 源文件夹选择
         src_layout = QHBoxLayout()
         self.src_label = QLabel("源文件夹:")
         self.src_line = QLineEdit()
@@ -42,7 +46,7 @@ class ScriptConfigDialog(QDialog):
         src_layout.addWidget(self.src_btn)
         layout.addLayout(src_layout)
 
-        # 目标文件夹
+        # 目标文件夹选择
         tgt_layout = QHBoxLayout()
         self.tgt_label = QLabel("目标文件夹:")
         self.tgt_line = QLineEdit()
@@ -53,18 +57,31 @@ class ScriptConfigDialog(QDialog):
         tgt_layout.addWidget(self.tgt_btn)
         layout.addLayout(tgt_layout)
 
-        # 执行间隔
+        # 执行间隔设置：增加天、小时、分钟、秒
         interval_layout = QHBoxLayout()
-        self.interval_label = QLabel("执行间隔 (秒):")
-        self.interval_spin = QSpinBox()
-        self.interval_spin.setRange(1, 3600)
-        interval_layout.addWidget(self.interval_label)
-        interval_layout.addWidget(self.interval_spin)
+        interval_label = QLabel("执行间隔:")
+        self.days_spin = QSpinBox()
+        self.days_spin.setRange(0, 365)
+        self.days_spin.setSuffix(" 天")
+        self.hours_spin = QSpinBox()
+        self.hours_spin.setRange(0, 23)
+        self.hours_spin.setSuffix(" 小时")
+        self.minutes_spin = QSpinBox()
+        self.minutes_spin.setRange(0, 59)
+        self.minutes_spin.setSuffix(" 分钟")
+        self.seconds_spin = QSpinBox()
+        self.seconds_spin.setRange(1, 59)
+        self.seconds_spin.setSuffix(" 秒")
+        interval_layout.addWidget(interval_label)
+        interval_layout.addWidget(self.days_spin)
+        interval_layout.addWidget(self.hours_spin)
+        interval_layout.addWidget(self.minutes_spin)
+        interval_layout.addWidget(self.seconds_spin)
         layout.addLayout(interval_layout)
 
         # 对话框按钮
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.accepted.connect(self.check_and_accept)
         self.buttonBox.rejected.connect(self.reject)
         layout.addWidget(self.buttonBox)
 
@@ -72,11 +89,14 @@ class ScriptConfigDialog(QDialog):
         self.load_config()
 
     def load_config(self):
-        # 如果已有配置，则填充各个字段
+        # 填充已有配置，注意执行间隔使用多单位
         self.script_line.setText(self.config.get("script_path", ""))
         self.src_line.setText(self.config.get("src", ""))
         self.tgt_line.setText(self.config.get("tgt", ""))
-        self.interval_spin.setValue(self.config.get("interval", 10))
+        self.days_spin.setValue(self.config.get("interval_days", 0))
+        self.hours_spin.setValue(self.config.get("interval_hours", 0))
+        self.minutes_spin.setValue(self.config.get("interval_minutes", 0))
+        self.seconds_spin.setValue(self.config.get("interval_seconds", 10))
 
     def choose_script(self):
         filename, _ = QFileDialog.getOpenFileName(self, "选择任务脚本", "", "Python Files (*.py)")
@@ -93,21 +113,38 @@ class ScriptConfigDialog(QDialog):
         if folder:
             self.tgt_line.setText(folder)
 
+    def check_and_accept(self):
+        # 检查源和目标文件夹是否同时存在且互不包含
+        src = self.src_line.text().strip()
+        tgt = self.tgt_line.text().strip()
+        if src and tgt:
+            src_abs = os.path.abspath(src)
+            tgt_abs = os.path.abspath(tgt)
+            # 如果相等或其中一者是另一者的子目录，视为包含关系
+            if src_abs == tgt_abs or src_abs.startswith(tgt_abs + os.sep) or tgt_abs.startswith(src_abs + os.sep):
+                QMessageBox.warning(self, "配置错误", "源文件夹与目标文件夹存在包含关系，请选择互不包含的文件夹。")
+                return
+        self.accept()
+
     def get_config(self):
-        # 返回配置字典
+        # 返回配置字典，包含多单位的间隔设置
         return {
             "script_path": self.script_line.text().strip(),
             "src": self.src_line.text().strip(),
             "tgt": self.tgt_line.text().strip(),
-            "interval": self.interval_spin.value()
+            "interval_days": self.days_spin.value(),
+            "interval_hours": self.hours_spin.value(),
+            "interval_minutes": self.minutes_spin.value(),
+            "interval_seconds": self.seconds_spin.value()
         }
 
 # ===============================
-# 任务项：封装每个脚本任务
+# 任务项：封装每个脚本任务（增加配置修改信号）
 # ===============================
 class TaskWidget(QWidget):
-    log_signal = pyqtSignal(str)   # 用于向主窗体发送日志信息
-    removed_signal = pyqtSignal(object)  # 用于通知删除任务
+    log_signal = pyqtSignal(str)            # 用于向主窗体发送日志信息
+    removed_signal = pyqtSignal(object)       # 用于通知删除任务
+    config_changed_signal = pyqtSignal()      # 配置变更后发出
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -138,11 +175,10 @@ class TaskWidget(QWidget):
         self.edit_btn.clicked.connect(self.edit_config)
         layout.addWidget(self.edit_btn)
 
-        # ==== 更新脚本按钮（直接重新加载脚本） ====
+        # 更新脚本按钮
         self.update_btn = QPushButton("更新脚本")
         self.update_btn.clicked.connect(self.update_script)
         layout.addWidget(self.update_btn)
-        # ============================================
 
         # 删除按钮
         self.del_btn = QPushButton("删除")
@@ -184,11 +220,16 @@ class TaskWidget(QWidget):
         if not self.script_module:
             self.log("脚本模块未加载，无法启动")
             return
-        interval = self.config.get("interval", 10) * 1000
-        self.timer.start(interval)
+        # 根据天、小时、分钟、秒计算总间隔（毫秒）
+        days = self.config.get("interval_days", 0)
+        hours = self.config.get("interval_hours", 0)
+        minutes = self.config.get("interval_minutes", 0)
+        seconds = self.config.get("interval_seconds", 10)
+        total_interval_ms = (days * 86400 + hours * 3600 + minutes * 60 + seconds) * 1000
+        self.timer.start(total_interval_ms)
         self.running = True
         self.start_stop_btn.setText("停止")
-        self.log("任务启动，间隔 {} 秒".format(self.config.get("interval", 10)))
+        self.log(f"任务启动，间隔 {days}天 {hours}时 {minutes}分 {seconds}秒")
 
     def stop(self):
         self.timer.stop()
@@ -207,33 +248,25 @@ class TaskWidget(QWidget):
             # 重新加载脚本模块
             self.load_script_module()
             self.log("配置已修改")
+            self.config_changed_signal.emit()
         else:
             self.log("取消配置修改")
 
-    # ==== 更新脚本功能：直接重新加载当前脚本 ====
     def update_script(self):
         """
-        直接重新加载当前配置中的脚本文件。
-        如果任务正在运行，则先停止任务，然后重新加载脚本模块，
-        最后提示用户重新启动任务以使用更新后的脚本。
+        更新脚本：停止任务、清除旧模块后重新加载，并提示用户重新启动任务。
         """
         if self.running:
             self.stop()
 
-        # 为确保加载的是最新版本，可以从 sys.modules 中删除旧模块（如果存在）
         path = self.config.get("script_path", "")
         module_name = "task_plugin_" + os.path.basename(path).replace(".", "_")
         if module_name in sys.modules:
             del sys.modules[module_name]
 
-        # 重新加载脚本模块
         self.load_script_module()
-
-        # 更新显示的脚本名称
         self.label.setText(os.path.basename(path))
-
         self.log(f"脚本已重新加载: {os.path.basename(path)}。请重新启动任务以应用更新。")
-    # ============================================
 
     def delete_self(self):
         self.stop()
@@ -241,7 +274,6 @@ class TaskWidget(QWidget):
         self.removed_signal.emit(self)
 
     def run_task(self):
-        # 如果任务正在执行，则跳过本次调用
         if self.is_executing:
             self.log("上次任务尚未完成，本次执行已跳过")
             return
@@ -267,7 +299,7 @@ class TaskWidget(QWidget):
         self.log_signal.emit(msg)
 
 # ===============================
-# 主窗口：包含脚本管理和任务日志两个Tab
+# 主窗口：包含脚本管理和任务日志两个 Tab，同时实现配置记录的加载和保存
 # ===============================
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -277,6 +309,7 @@ class MainWindow(QMainWindow):
         self.task_widgets = []  # 存储所有任务项
 
         self.init_ui()
+        self.load_tasks_config()
 
     def init_ui(self):
         self.tabs = QTabWidget()
@@ -285,7 +318,6 @@ class MainWindow(QMainWindow):
         # 脚本管理页
         self.manage_tab = QWidget()
         self.manage_layout = QVBoxLayout()
-        # “添加任务”按钮
         self.add_task_btn = QPushButton("添加任务")
         self.add_task_btn.clicked.connect(self.add_task)
         self.manage_layout.addWidget(self.add_task_btn)
@@ -313,35 +345,58 @@ class MainWindow(QMainWindow):
         dialog = ScriptConfigDialog(parent=self)
         if dialog.exec_() == QDialog.Accepted:
             config = dialog.get_config()
-            # 检查必要的配置
             if not config.get("script_path"):
                 QMessageBox.warning(self, "配置错误", "请指定脚本文件")
                 return
-            task_widget = TaskWidget(config, self)
-            task_widget.log_signal.connect(self.append_log)
-            task_widget.removed_signal.connect(self.remove_task)
-            self.task_widgets.append(task_widget)
-            # 用 QGroupBox 包裹任务项，便于显示标题
-            group = QGroupBox(os.path.basename(config.get("script_path")))
-            group_layout = QVBoxLayout()
-            group_layout.addWidget(task_widget)
-            group.setLayout(group_layout)
-            task_widget.group_box = group
-            self.task_list_layout.addWidget(group)
+            self.add_task_from_config(config)
             self.append_log("添加任务：" + config.get("script_path"))
+            self.save_tasks_config()
         else:
             self.append_log("添加任务已取消")
 
+    def add_task_from_config(self, config):
+        task_widget = TaskWidget(config, self)
+        task_widget.log_signal.connect(self.append_log)
+        task_widget.removed_signal.connect(self.remove_task)
+        task_widget.config_changed_signal.connect(self.save_tasks_config)
+        self.task_widgets.append(task_widget)
+        group = QGroupBox(os.path.basename(config.get("script_path")))
+        group_layout = QVBoxLayout()
+        group_layout.addWidget(task_widget)
+        group.setLayout(group_layout)
+        task_widget.group_box = group
+        self.task_list_layout.addWidget(group)
+
     def remove_task(self, task_widget):
-        # 从布局和列表中删除任务项
         if task_widget in self.task_widgets:
             self.task_widgets.remove(task_widget)
             self.task_list_layout.removeWidget(task_widget.group_box)
             task_widget.group_box.deleteLater()
             self.append_log("删除任务：" + os.path.basename(task_widget.config.get("script_path", "")))
+            self.save_tasks_config()
 
     def append_log(self, message):
         self.log_edit.append(message)
+
+    def load_tasks_config(self):
+        if os.path.exists(CONFIG_RECORD_FILE):
+            try:
+                with open(CONFIG_RECORD_FILE, "r", encoding="utf-8") as f:
+                    tasks_config = json.load(f)
+                for config in tasks_config:
+                    self.add_task_from_config(config)
+                self.append_log("加载任务配置成功。")
+            except Exception as e:
+                self.append_log("加载任务配置失败: " + str(e))
+
+    def save_tasks_config(self):
+        tasks_config = [task.config for task in self.task_widgets]
+        try:
+            with open(CONFIG_RECORD_FILE, "w", encoding="utf-8") as f:
+                json.dump(tasks_config, f, ensure_ascii=False, indent=4)
+            self.append_log("任务配置已保存。")
+        except Exception as e:
+            self.append_log("保存任务配置失败: " + str(e))
 
 # ===============================
 # 主程序入口
