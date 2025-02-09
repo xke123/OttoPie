@@ -20,24 +20,63 @@
 
 ## 🚀 安装与运行
 
-### 安装依赖
+### 1️⃣ 安装依赖
 
-OttoPie 基于 Python 3 运行，请确保已安装 Python 3.x。
+OttoPie 依赖于 Python 3，请确保已经安装 Python 3.x。
 
-### 运行 OttoPie
+**方式一：使用虚拟环境解压并运行**
 
-该项目已包含虚拟环境文件 venv.zip，需要解压后使用。为了方便使用，已经添加了各平台一键启动脚本，存放于 run_scripts/ 目录中。
-根据所在平台，使用相应脚本启动主程序：
-Windows：双击 run_scripts/windows_main.bat
-macOS：双击 run_scripts/macos_main.command
-Linux：在终结中运行 ./run_scripts/linux_main.sh
+1. 下载并解压项目中的 `venv.zip` 文件到项目根目录。
+2. 进入项目根目录，打开终端或命令行窗口。
+3. 运行以下命令来激活虚拟环境并启动程序：
+   
+   - **Windows**：
+     ```bash
+     venv\\Scripts\\activate
+     python main.py
+     ```
 
-如需要运行插件打包程序：
-Windows：双击 run_scripts/windows_packager.bat
-macOS：双击 run_scripts/macos_packager.command
-Linux：在终结中运行 ./run_scripts/linux_packager.sh
+   - **macOS/Linux**：
+     ```bash
+     source venv/bin/activate
+     python main.py
+     ```
 
-运行脚本会自动检查并解压 venv.zip，使用虚拟环境运行 OttoPie。
+**方式二：手动安装依赖**
+
+1. 在项目根目录下，运行以下命令手动安装依赖：
+   
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. 安装完成后，运行以下命令启动主程序：
+
+   ```bash
+   python main.py
+   ```
+
+### 2️⃣ 一键脚本运行 OttoPie
+
+在项目根目录下，你将看到一个 `run_scripts` 文件夹，其中包含了为各个平台准备的一键运行脚本。根据你的操作系统，选择适合的脚本进行运行。
+
+#### Windows
+
+- **主程序运行**：双击 `run_scripts/windows_main.bat` 运行主程序。
+- **打包程序运行**：双击 `run_scripts/windows_packager.bat` 运行打包程序。
+
+#### macOS
+
+- **主程序运行**：双击 `run_scripts/macos_main.command` 运行主程序。
+- **打包程序运行**：双击 `run_scripts/macos_packager.command` 运行打包程序。
+
+#### Linux
+
+- **主程序运行**：双击 `run_scripts/linux_main.sh` 运行主程序。
+- **打包程序运行**：双击 `run_scripts/linux_packager.sh` 运行打包程序。
+
+> 运行脚本将会自动检查是否存在 `venv` 文件夹，如果没有，它将会解压 `venv.zip` 来创建虚拟环境，并激活该环境运行相应程序。
+
 ---
 
 ## 🏗️ 使用指南
